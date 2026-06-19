@@ -3,7 +3,7 @@ import pandas as pd
 import os
 
 # ==========================================
-# 1. 藥物計算邏輯定義區 (L01, L02, L04, L05)
+# 1. 藥物計算邏輯定義區
 # ==========================================
 
 def logic_l01(age_years, weight_kg):
@@ -41,41 +41,33 @@ LOGIC_MAP = {
 }
 
 # ==========================================
-# 2. 資料讀取 (加強偵錯版)
+# 2. 資料讀取 (加強防呆版)
 # ==========================================
 
 def load_medication_db():
     file_path = "meds.xlsx"
-    
-    # 偵錯：列出目前目錄所有檔案
-    all_files = os.listdir(".")
-    
     if not os.path.exists(file_path):
-        st.error(f"❌ 找不到 {file_path}。目前的目錄檔案有: {all_files}")
+        st.error(f"❌ 找不到 {file_path}")
         return None
     
     try:
-        # 明確指定使用 openpyxl 引擎
-        df = pd.read_excel(file_path, engine='openpyxl')
+        # 讀取 Excel 並將所有空值填補為空字串
+        df = pd.read_excel(file_path, engine='openpyxl').fillna("")
         
-        # 檢查必要的欄位是否存在
-        required_cols = ['Location', 'Trade_Name', 'Chinese_Name', 'Note', 'Logic_Type']
-        for col in required_cols:
-            if col not in df.columns:
-                st.error(f"❌ Excel 格式錯誤：缺少欄位 '{col}'")
-                return None
-                
         db = {}
         for _, row in df.iterrows():
-            db[str(row['Location'])] = {
-                "trade_name": row['Trade_Name'],
-                "chinese_name": row['Chinese_Name'],
-                "note": row['Note'],
-                "logic_type": row['Logic_Type']
+            loc = str(row['Location']).strip()
+            if not loc: continue # 跳過空白行
+            
+            db[loc] = {
+                "trade_name": str(row['Trade_Name']),
+                "chinese_name": str(row['Chinese_Name']),
+                "note": str(row['Note']),
+                "logic_type": str(row['Logic_Type'])
             }
         return db
     except Exception as e:
-        st.error(f"❌ 讀取 Excel 內容時發生錯誤: {e}")
+        st.error(f"❌ 讀取錯誤: {e}")
         return None
 
 # ==========================================
@@ -92,7 +84,6 @@ with col2: age_m = st.number_input("年齡 (月)", 0, 11, 0)
 with col3: weight_kg = st.number_input("體重 (KG)", 0.0, 100.0, 0.0)
 total_age = age_y + (age_m / 12.0)
 
-# 載入資料
 MEDICATION_DB = load_medication_db()
 
 if MEDICATION_DB:
@@ -100,9 +91,14 @@ if MEDICATION_DB:
     st.subheader("📦 選擇藥物儲位")
     locations = sorted(MEDICATION_DB.keys())
     selected = []
+    
     cols = st.columns(4)
     for i, loc in enumerate(locations):
-        if cols[i % 4].checkbox(f"{loc} {MEDICATION_DB[loc]['chinese_name'][:4]}"):
+        # 防呆：確保 chinese_name 轉為字串再切片，避免 TypeError
+        chi_name = MEDICATION_DB[loc]['chinese_name']
+        display_name = f"{loc} {chi_name[:4]}" if chi_name else loc
+        
+        if cols[i % 4].checkbox(display_name):
             selected.append(loc)
             
     if selected:
@@ -110,10 +106,12 @@ if MEDICATION_DB:
         for loc in selected:
             med = MEDICATION_DB[loc]
             calc_func = LOGIC_MAP.get(med['logic_type'])
-            res = calc_func(total_age, weight_kg) if calc_func else "未設定邏輯"
+            
+            # 執行計算
+            res = calc_func(total_age, weight_kg) if calc_func else "⚠️ 未設定邏輯"
             
             with st.expander(f"📍 {loc} {med['chinese_name']}", expanded=True):
                 st.write(f"**商品名:** {med['trade_name']}")
                 if "⚠️" in res: st.error(res)
                 else: st.success(res)
-                st.info(f"💡 備註: {med['note']}")
+                if med['note']: st.info(f"💡 備註: {med['note']}")
